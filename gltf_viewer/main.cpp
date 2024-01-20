@@ -36,6 +36,11 @@ bool running = false;
 GLuint quad_vao;
 GLuint sphere_vao;
 unsigned int sphere_vao_index_count;
+GLuint sphere_albedo;
+GLuint sphere_metallic;
+GLuint sphere_roughness;
+GLuint sphere_normal;
+GLuint sphere_ao;
 GLuint screen_framebuffer;
 GLuint screen_framebuffer_texture;
 GLuint screen_intermediate_framebuffer;
@@ -67,6 +72,7 @@ void quit();
 void render_prepare_framebuffer();
 void render_flip_framebuffer();
 bool shader_compile(GLuint* id, const char* vertex_path, const char* fragment_path);
+bool texture_load(GLuint* texture, std::string path);
 
 int main() {
 	if (!init()) {
@@ -76,20 +82,14 @@ int main() {
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT, 0.1f, 100.0f);
 
 	glm::vec3 light_positions[] = {
-		glm::vec3(-10.0f,  10.0f, 10.0f),
-		glm::vec3(10.0f,  10.0f, 10.0f),
-		glm::vec3(-10.0f, -10.0f, 10.0f),
-		glm::vec3(10.0f, -10.0f, 10.0f),
+		glm::vec3(0.0f, 0.0f, 10.0f),
 	};
 	glm::vec3 light_colors[] = {
-		glm::vec3(300.0f, 300.0f, 300.0f),
-		glm::vec3(300.0f, 300.0f, 300.0f),
-		glm::vec3(300.0f, 300.0f, 300.0f),
-		glm::vec3(300.0f, 300.0f, 300.0f)
+		glm::vec3(150.0f),
 	};
 	glUseProgram(pbr_shader);
-	glUniform1i(glGetUniformLocation(pbr_shader, "light_count"), 4);
-	for (unsigned int i = 0; i < 4; i++) {
+	glUniform1i(glGetUniformLocation(pbr_shader, "light_count"), 1);
+	for (unsigned int i = 0; i < 1; i++) {
 		glUniform3fv(glGetUniformLocation(pbr_shader, (std::string("light_positions[") + std::to_string(i) + std::string("]")).c_str()), 1, glm::value_ptr(light_positions[i]));
 		glUniform3fv(glGetUniformLocation(pbr_shader, (std::string("light_colors[") + std::to_string(i) + std::string("]")).c_str()), 1, glm::value_ptr(light_colors[i]));
 	}
@@ -184,8 +184,16 @@ int main() {
 		glUniformMatrix4fv(glGetUniformLocation(pbr_shader, "projection_view"), 1, GL_FALSE, glm::value_ptr(projection_view));
 		glUniform3fv(glGetUniformLocation(pbr_shader, "view_position"), 1, glm::value_ptr(camera_position));
 
-		glUniform3f(glGetUniformLocation(pbr_shader, "albedo"), 0.5f, 0.0f, 0.0f);
-		glUniform1f(glGetUniformLocation(pbr_shader, "ao"), 1.0f);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, sphere_albedo);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, sphere_normal);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, sphere_metallic);
+		glActiveTexture(GL_TEXTURE3);
+		glBindTexture(GL_TEXTURE_2D, sphere_roughness);
+		glActiveTexture(GL_TEXTURE4);
+		glBindTexture(GL_TEXTURE_2D, sphere_ao);
 
 		int rows = 7;
 		int columns = 7;
@@ -201,8 +209,6 @@ int main() {
 
 				glUniformMatrix4fv(glGetUniformLocation(pbr_shader, "model"), 1, GL_FALSE, glm::value_ptr(sphere_model));
 				glUniformMatrix3fv(glGetUniformLocation(pbr_shader, "normal_matrix"), 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(glm::mat3(sphere_model)))));
-				glUniform1f(glGetUniformLocation(pbr_shader, "metallic"), (float)row / (float)rows);
-				glUniform1f(glGetUniformLocation(pbr_shader, "roughness"), glm::clamp((float)column / (float)columns, 0.05f, 1.0f));
 
 				glBindVertexArray(sphere_vao);
 				glDrawElements(GL_TRIANGLE_STRIP, sphere_vao_index_count, GL_UNSIGNED_INT, 0);
@@ -474,6 +480,23 @@ bool init() {
 
 	glBindVertexArray(0);
 
+	// Load sphere textures
+	if (!texture_load(&sphere_albedo, "./res/rustediron2_basecolor.png")) {
+		return false;
+	}
+	if (!texture_load(&sphere_metallic, "./res/rustediron2_metallic.png")) {
+		return false;
+	}
+	if (!texture_load(&sphere_roughness, "./res/rustediron2_roughness.png")) {
+		return false;
+	}
+	if (!texture_load(&sphere_normal, "./res/rustediron2_normal.png")) {
+		return false;
+	}
+	if (!texture_load(&sphere_ao, "./res/rustediron2_ao.png")) {
+		return false;
+	}
+
 	// Setup screen framebuffer
 	glGenFramebuffers(1, &screen_framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, screen_framebuffer);
@@ -520,12 +543,18 @@ bool init() {
 	if (!shader_compile(&text_shader, "./shader/text_vs.glsl", "./shader/text_fs.glsl")) {
 		return false;
 	}
-	if (!shader_compile(&pbr_shader, "./shader/pbr_vs.glsl", "./shader/pbr_fs.glsl")) {
-		return false;
-	}
 	if (!shader_compile(&light_shader, "./shader/light_vs.glsl", "./shader/light_fs.glsl")) {
 		return false;
 	}
+	if (!shader_compile(&pbr_shader, "./shader/pbr_vs.glsl", "./shader/pbr_fs.glsl")) {
+		return false;
+	}
+	glUseProgram(pbr_shader);
+	glUniform1i(glGetUniformLocation(pbr_shader, "albedo_map"), 0);
+	glUniform1i(glGetUniformLocation(pbr_shader, "normal_map"), 1);
+	glUniform1i(glGetUniformLocation(pbr_shader, "metallic_map"), 2);
+	glUniform1i(glGetUniformLocation(pbr_shader, "roughness_map"), 3);
+	glUniform1i(glGetUniformLocation(pbr_shader, "ao_map"), 4);
 
 	// Buffer glyph vertex data
 	float glyph_vertices[12] = {
@@ -685,5 +714,40 @@ bool shader_compile(GLuint* id, const char* vertex_path, const char* fragment_pa
 	glDeleteShader(fragment_shader);
 
 	*id = program;
+	return true;
+}
+
+bool texture_load(GLuint* texture, std::string path) {
+	SDL_Surface* texture_surface = IMG_Load(path.c_str());
+	if (texture_surface == NULL) {
+		printf("Unable to load model texture at path %s: %s\n", path.c_str(), IMG_GetError());
+		return false;
+	}
+
+	GLenum texture_format;
+	if (texture_surface->format->BytesPerPixel == 1) {
+		texture_format = GL_RED;
+	} else if (texture_surface->format->BytesPerPixel == 3) {
+		texture_format = GL_RGB;
+	} else if (texture_surface->format->BytesPerPixel == 4) {
+		texture_format = GL_RGBA;
+	} else {
+		printf("Texture format of texture %s not recognized\n", path.c_str());
+		return false;
+	}
+
+	glGenTextures(1, texture);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, *texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexImage2D(GL_TEXTURE_2D, 0, texture_format, texture_surface->w, texture_surface->h, 0, texture_format, GL_UNSIGNED_BYTE, texture_surface->pixels);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	SDL_FreeSurface(texture_surface);
+
 	return true;
 }

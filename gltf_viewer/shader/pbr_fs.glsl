@@ -11,10 +11,11 @@ uniform vec3 light_positions[4];
 uniform vec3 light_colors[4];
 uniform int light_count;
 
-uniform vec3 albedo;
-uniform float metallic;
-uniform float roughness;
-uniform float ao;
+uniform sampler2D albedo_map;
+uniform sampler2D normal_map;
+uniform sampler2D metallic_map;
+uniform sampler2D roughness_map;
+uniform sampler2D ao_map;
 
 const float PI = 3.14159265359;
 
@@ -26,6 +27,21 @@ vec3 fresnel_schlick(float cos_theta, vec3 base_reflectivity);
 void main() {
 	vec3 view_direction = normalize(view_position - world_position);
 	vec3 normal = normalize(normal_in);
+
+	vec3 albedo = pow(texture(albedo_map, texture_coordinates).rgb, vec3(2.2));
+	float metallic = texture(metallic_map, texture_coordinates).r;
+	float roughness = texture(roughness_map, texture_coordinates).r;
+	float ao = texture(ao_map, texture_coordinates).r;
+
+	vec3 tangent_normal = texture(normal_map, texture_coordinates).xyz * 2.0 - 1.0;
+	vec3 q1 = dFdx(world_position);
+	vec3 q2 = dFdy(world_position);
+	vec2 st1 = dFdx(texture_coordinates);
+	vec2 st2 = dFdy(texture_coordinates);
+	vec3 n = normalize(normal);
+	vec3 t = normalize(q1 * st2.t - q2 * st1.t);
+	vec3 b = -normalize(cross(n, t));
+	normal = normalize(mat3(t, b, n) * tangent_normal);
 
 	vec3 base_reflectivity = vec3(0.04);
 	base_reflectivity = mix(base_reflectivity, albedo, metallic);
